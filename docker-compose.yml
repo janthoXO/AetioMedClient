@@ -1,0 +1,67 @@
+# Backend for the debug client: generator, NATS (+ WebSocket for the browser)
+# and an OTLP backend for node traces/logs. The React client runs outside
+# compose (`pnpm dev`); its Vite proxy forwards /loki to the lgtm container.
+#
+#   cp .env.example .env && docker compose up
+services:
+  aetiomed:
+    image: ghcr.io/janthoxo/aetiomed/server:${AETIOMED_TAG:-0.0.27}
+    volumes:
+      # Catalogue YAMLs are not baked into the image.
+      - ${AETIOMED_DATA_DIR:-../AetioMed/data}:/app/data
+    environment:
+      - FEATURES=NATS,ALLOW_LLMS
+      - ALLOWED_LLMS
+      - LANGUAGES=${LANGUAGES:-English,German}
+      - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=${NATS_USER:-nats}
+      - NATS_PASSWORD=${NATS_PASSWORD:-nats}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318
+      - OTEL_SERVICE_NAME=aetiomed
+    extra_hosts:
+      # Lets a request's llmConfig.url point at an Ollama on the host.
+      - host.docker.internal:host-gateway
+    depends_on: [nats, lgtm]
+    restart: unless-stopped
+
+  nats:
+    image: nats:2.12.1
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "4222:4222" # client
+      - "8080:8080" # websocket (browser)
+      - "8222:8222" # monitoring
+    environment:
+      - NATS_USER=${NATS_USER:-nats}
+      - NATS_PASSWORD=${NATS_PASSWORD:-nats}
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats_data:/data
+    restart: unless-stopped
+
+  # One-shot: no-expiry mirrors of the server's 1 h result/plan streams.
+  nats-init:
+    image: natsio/nats-box:0.20.0
+    entrypoint: ["sh", "/init.sh"]
+    environment:
+      - NATS_URL=nats://${NATS_USER:-nats}:${NATS_PASSWORD:-nats}@nats:4222
+    volumes:
+      - ./nats/init.sh:/init.sh:ro
+    depends_on: [nats]
+    restart: on-failure
+
+  # Grafana + Loki (logs) + Tempo (traces), OTLP in on 4318.
+  lgtm:
+    image: grafana/otel-lgtm:0.36.0
+    ports:
+      - "3000:3000" # Grafana
+      - "3100:3100" # Loki API (client queries node outputs)
+      - "3200:3200" # Tempo API
+    volumes:
+      - lgtm_data:/data
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  lgtm_data:
