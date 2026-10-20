@@ -48,8 +48,8 @@ import { FLAG_LABELS, PROVIDER_LABELS } from "@/lib/types";
 type Option<T> = { value: T; label: string; hint?: string };
 type Llm = { provider: LLMProvider; model: string };
 
-// Mirrors the server's LANGUAGES (default English,German); there is no meta endpoint.
-const LANGUAGES = ["English", "German"];
+// Mirrors the server's LANGUAGES (ISO 639-1, default en,de); there is no meta endpoint.
+const LANGUAGES = ["en", "de"];
 
 const FIELDS = Object.entries(FLAG_LABELS).map(([flag, label]) => ({
   flag: flag as GenerationFlag,

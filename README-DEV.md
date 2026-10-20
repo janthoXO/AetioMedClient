@@ -215,15 +215,19 @@ Copy `.env.example` to `.env`.
 | `AETIOMED_TAG`               | compose | `0.0.27`              | Server image tag                        |
 | `AETIOMED_DATA_DIR`          | compose | `../AetioMed/data`    | Catalogue YAMLs, mounted at `/app/data` |
 | `ALLOWED_LLMS`               | compose | none                  | `PROVIDER:MODEL` pairs, comma separated |
-| `LANGUAGES`                  | compose | `English,German`      | Languages for server                    |
+| `LANGUAGES`                  | compose | `en,de`               | ISO 639-1 codes, must include `en`      |
+| `ICD_RELEASE`                | compose | `2026-01`             | ICD-11 release loaded by `icd`          |
+| `ICD_PORT`                   | compose | `3001`                | Host port of the ICD container          |
+| `AETIOREFERRAL_TAG`          | compose | `0.0.1`               | AetioReferral image tag (PDF letters)   |
 | `MAX_CONCURRENT_GENERATIONS` | compose | `4`                   | Parallel jobs on server                 |
 | `NATS_USER`                  | compose | `nats`                | NATS user                               |
 | `NATS_PASSWORD`              | compose | `nats`                | NATS password                           |
 | `VITE_NATS_URL`              | client  | `ws://localhost:8080` | NATS WebSocket URL                      |
 | `VITE_NATS_USER`             | client  | none                  | NATS user in bundle                     |
 | `VITE_NATS_PASSWORD`         | client  | none                  | NATS password in bundle                 |
+| `VITE_ICD_RELEASE`           | client  | `2026-01`             | ICD-11 release for the diagnosis search |
 
-Server runs with `FEATURES=NATS,ALLOW_LLMS`. Language dropdown in the client is fixed to English and German (`GenerateDialog.tsx`). Changing `LANGUAGES` does not change dropdown.
+Server runs with `FEATURES=NATS,ALLOW_LLMS`. Language dropdown in the client is fixed to `en` and `de` (`GenerateDialog.tsx`). Changing `LANGUAGES` does not change dropdown.
 
 Bump server: set `AETIOMED_TAG` in `.env`, then `docker compose up -d`.
 
