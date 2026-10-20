@@ -157,6 +157,7 @@ function RequestView({ run }: { run: RunRecord }) {
   const instructions = Object.entries(request.userInstructions ?? {});
   const rows: [string, React.ReactNode][] = [
     ["Diagnosis", request.diagnosis],
+    ["ICD", request.icd ?? "—"],
     [
       "LLM",
       run.llm

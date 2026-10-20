@@ -29,6 +29,8 @@ export type PlanSegment = { fixed: boolean; text: string };
 /** CaseGenerationRequest minus `jobId` and `llmConfig`, which belong to a run. */
 export type GenerationRequest = {
   diagnosis: string;
+  /** ICD-11 stem code picked in the search; with ICD on, the server resolves the diagnosis from it. */
+  icd?: string;
   generationFlags: GenerationFlag[];
   userInstructions?: Partial<Record<GenerationFlag | "general", string>>;
   language?: string;
