@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +28,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { InputGroupAddon } from "@/components/ui/input-group";
 import {
   Select,
   SelectContent,
@@ -35,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useAllowedLlms } from "@/hooks/useMeta";
 import { db } from "@/lib/db";
+import { searchIcd, type IcdEntity } from "@/lib/icd";
 import { startRun } from "@/lib/jobs";
 import type {
   Difficulty,
@@ -48,8 +58,8 @@ import { FLAG_LABELS, PROVIDER_LABELS } from "@/lib/types";
 type Option<T> = { value: T; label: string; hint?: string };
 type Llm = { provider: LLMProvider; model: string };
 
-// Mirrors the server's LANGUAGES (default English,German); there is no meta endpoint.
-const LANGUAGES = ["English", "German"];
+// Mirrors the server's LANGUAGES (ISO 639-1, default en,de); there is no meta endpoint.
+const LANGUAGES = ["en", "de"];
 
 const FIELDS = Object.entries(FLAG_LABELS).map(([flag, label]) => ({
   flag: flag as GenerationFlag,
@@ -118,6 +128,108 @@ function OptionToggle<T extends string>({
   );
 }
 
+/**
+ * Diagnosis input that searches ICD-11 as you type. Picking a result fills the
+ * text with its title and keeps its code; editing the text drops the code, so
+ * free text (e.g. with no ICD container) is still sent as a plain diagnosis.
+ */
+function DiagnosisSearch({
+  diagnosis,
+  icd,
+  language,
+  onChange,
+}: {
+  diagnosis: string;
+  icd: IcdEntity | null;
+  language: string;
+  onChange: (diagnosis: string, icd: IcdEntity | null) => void;
+}) {
+  const [results, setResults] = useState<IcdEntity[]>([]);
+  const [error, setError] = useState<string>();
+  const q = diagnosis.trim();
+  const searching = q.length >= 2 && q !== icd?.title;
+
+  useEffect(() => {
+    if (!searching) return;
+    const ac = new AbortController();
+    const t = setTimeout(
+      () =>
+        searchIcd(q, language, ac.signal).then(
+          (r) => {
+            setResults(r);
+            setError(undefined);
+          },
+          (e) => !ac.signal.aborted && setError(String(e))
+        ),
+      250
+    );
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [q, language, searching]);
+
+  return (
+    <>
+      <Combobox
+        items={q.length >= 2 ? results : []}
+        filter={null}
+        value={icd}
+        onValueChange={(v) => v && onChange(v.title, v)}
+        inputValue={diagnosis}
+        // Only typing touches the code: picking an item also sets the input
+        // (to the title), in the same event as onValueChange.
+        onInputValueChange={(v, { reason }) =>
+          reason === "input-change" &&
+          onChange(v, icd && v === icd.title ? icd : null)
+        }
+        itemToStringLabel={(e: IcdEntity) => e.title}
+        isItemEqualToValue={(a: IcdEntity, b: IcdEntity) => a.code === b.code}
+      >
+        <ComboboxInput
+          id="diagnosis"
+          placeholder="Search ICD-11, e.g. Myocardial infarction"
+          showTrigger={false}
+          className="w-full"
+        >
+          {icd && (
+            <InputGroupAddon align="inline-end">
+              <Badge variant="secondary" className="font-mono">
+                {icd.code}
+              </Badge>
+            </InputGroupAddon>
+          )}
+        </ComboboxInput>
+        <ComboboxContent>
+          <ComboboxEmpty>{q.length >= 2 && "No ICD-11 match"}</ComboboxEmpty>
+          <ComboboxList>
+            {(e: IcdEntity) => (
+              <ComboboxItem key={e.code} value={e}>
+                <span className="flex-1">{e.title}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {e.code}
+                </span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+      {error ? (
+        <FieldDescription className="text-destructive">
+          {error}. Is the ICD container running? Free text is sent as is.
+        </FieldDescription>
+      ) : (
+        q !== "" &&
+        !icd && (
+          <FieldDescription>
+            No ICD-11 entry picked: sent as free text without a code.
+          </FieldDescription>
+        )
+      )}
+    </>
+  );
+}
+
 /** A textarea hidden behind a link-style button until asked for. */
 function RevealableTextarea({
   label,
@@ -183,6 +295,7 @@ export function GenerateDialog({
   const navigate = useNavigate();
   const { data: allowed, error } = useAllowedLlms();
   const [diagnosis, setDiagnosis] = useState("");
+  const [icd, setIcd] = useState<IcdEntity | null>(null);
   const [language, setLanguage] = useState(LANGUAGES[0]);
   const [mode, setMode] = useState<GenerationMode>("normal");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -212,6 +325,7 @@ export function GenerateDialog({
 
   const reset = () => {
     setDiagnosis("");
+    setIcd(null);
     setLanguage(LANGUAGES[0]);
     setMode("normal");
     setDifficulty("medium");
@@ -228,6 +342,7 @@ export function GenerateDialog({
     );
     const request: GenerationRequest = {
       diagnosis: diagnosis.trim(),
+      ...(icd && { icd: icd.code }),
       generationFlags: flags,
       ...(Object.keys(userInstructions).length > 0 && { userInstructions }),
       language,
@@ -269,11 +384,14 @@ export function GenerateDialog({
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="diagnosis">Diagnosis</FieldLabel>
-              <Input
-                id="diagnosis"
-                value={diagnosis}
-                placeholder="e.g. Myocardial infarction"
-                onChange={(e) => setDiagnosis(e.target.value)}
+              <DiagnosisSearch
+                diagnosis={diagnosis}
+                icd={icd}
+                language={language}
+                onChange={(d, i) => {
+                  setDiagnosis(d);
+                  setIcd(i);
+                }}
               />
             </Field>
 

@@ -7,8 +7,19 @@ import path from "path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   // Loki has no CORS headers; node outputs are queried through this proxy.
-  server: { proxy: { "/loki": "http://localhost:3100" } },
-  preview: { proxy: { "/loki": "http://localhost:3100" } },
+  // /icd: the ICD-11 container, for the diagnosis search.
+  server: {
+    proxy: {
+      "/loki": "http://localhost:3100",
+      "/icd": "http://localhost:3001",
+    },
+  },
+  preview: {
+    proxy: {
+      "/loki": "http://localhost:3100",
+      "/icd": "http://localhost:3001",
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

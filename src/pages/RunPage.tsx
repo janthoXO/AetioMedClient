@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseView } from "@/components/CaseView";
+import { JsonTree } from "@/components/JsonTree";
 import { PlanReviewDialog } from "@/components/PlanReviewDialog";
 import { PlanView } from "@/components/PlanView";
 import { RunGraph } from "@/components/RunGraph";
@@ -77,6 +78,13 @@ const defaultTab = (status: RunRecord["status"]) =>
       : status === "done"
         ? "case"
         : "labels";
+
+const FINISHED_TOAST = {
+  done: { message: "Case generated", action: "Show case" },
+  planned: { message: "Plan ready for review", action: "Show plan" },
+  failed: { message: "Generation failed", action: "Show labels" },
+  cancelled: { message: "Generation cancelled", action: "Show labels" },
+} as const;
 
 function EmptyNote({
   title,
@@ -157,6 +165,7 @@ function RequestView({ run }: { run: RunRecord }) {
   const instructions = Object.entries(request.userInstructions ?? {});
   const rows: [string, React.ReactNode][] = [
     ["Diagnosis", request.diagnosis],
+    ["ICD", request.icd ?? "—"],
     [
       "LLM",
       run.llm
@@ -286,6 +295,23 @@ function RunDetail({ run }: { run: RunRecord }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const active = run.status === "queued" || run.status === "running";
+
+  // Tell the viewer once the run they are watching finishes; the tab stays put.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active) {
+      const { message, action } =
+        FINISHED_TOAST[run.status as keyof typeof FINISHED_TOAST];
+      (run.status === "failed" ? toast.error : toast.success)(message, {
+        duration: 10_000,
+        action: {
+          label: action,
+          onClick: () => setTab(defaultTab(run.status)),
+        },
+      });
+    }
+    wasActive.current = active;
+  }, [active, run.status]);
 
   async function cancel() {
     if (!(await cancelRun(run.jobId)))
@@ -487,9 +513,9 @@ function RunDetail({ run }: { run: RunRecord }) {
               Copy JSON
             </Button>
             <ScrollArea className="h-[60vh] rounded-lg border bg-muted/30">
-              <pre className="p-3 font-mono text-xs">
-                {JSON.stringify(run, null, 2)}
-              </pre>
+              <div className="p-3">
+                <JsonTree value={JSON.parse(JSON.stringify(run))} />
+              </div>
             </ScrollArea>
           </div>
         </TabsContent>

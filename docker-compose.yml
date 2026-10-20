@@ -5,14 +5,17 @@
 #   cp .env.example .env && docker compose up
 services:
   aetiomed:
-    image: ghcr.io/janthoxo/aetiomed/server:${AETIOMED_TAG:-0.0.27}
+    image: ghcr.io/janthoxo/aetiomed/server:${AETIOMED_TAG:-latest}
     volumes:
       # Catalogue YAMLs are not baked into the image.
       - ${AETIOMED_DATA_DIR:-../AetioMed/data}:/app/data
     environment:
       - FEATURES=NATS,ALLOW_LLMS
       - ALLOWED_LLMS
-      - LANGUAGES=${LANGUAGES:-English,German}
+      - LANGUAGES=${LANGUAGES:-en,de}
+      - ICD_API_URL=http://icd
+      - ICD_RELEASE=${ICD_RELEASE:-2026-01}
+      - REFERRAL_MCP_URL=http://aetioreferral:8000/mcp
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
       - NATS_URL=nats://nats:4222
       - NATS_USER=${NATS_USER:-nats}
@@ -22,7 +25,41 @@ services:
     extra_hosts:
       # Lets a request's llmConfig.url point at an Ollama on the host.
       - host.docker.internal:host-gateway
-    depends_on: [nats, lgtm]
+    depends_on:
+      nats:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      icd:
+        condition: service_healthy
+      aetioreferral:
+        condition: service_started
+    restart: unless-stopped
+
+  # PDF referral letters for the chief complaint.
+  aetioreferral:
+    image: ghcr.io/janthoxo/aetioreferral/server:${AETIOREFERRAL_TAG:-0.0.1}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # WHO ICD-11 API; the server probes it on startup.
+  icd:
+    image: whoicd/icd-api:2.6.0
+    ports:
+      - "${ICD_PORT:-3001}:80"
+    environment:
+      - acceptLicense=true
+      - saveAnalytics=false
+      - include=${ICD_RELEASE:-2026-01}_de-en # release_languages; must cover LANGUAGES
+    # 127.0.0.1, not localhost: localhost resolves to ::1 and the API only
+    # listens on IPv4. Without Accept-Language the release answers 404.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'API-Version: v2' --header 'Accept: application/json' --header 'Accept-Language: en' http://127.0.0.1/icd/release/11/${ICD_RELEASE:-2026-01}/mms || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
   nats:
