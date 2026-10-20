@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseView } from "@/components/CaseView";
+import { JsonTree } from "@/components/JsonTree";
 import { PlanReviewDialog } from "@/components/PlanReviewDialog";
 import { PlanView } from "@/components/PlanView";
 import { RunGraph } from "@/components/RunGraph";
@@ -512,9 +513,9 @@ function RunDetail({ run }: { run: RunRecord }) {
               Copy JSON
             </Button>
             <ScrollArea className="h-[60vh] rounded-lg border bg-muted/30">
-              <pre className="p-3 font-mono text-xs">
-                {JSON.stringify(run, null, 2)}
-              </pre>
+              <div className="p-3">
+                <JsonTree value={JSON.parse(JSON.stringify(run))} />
+              </div>
             </ScrollArea>
           </div>
         </TabsContent>
