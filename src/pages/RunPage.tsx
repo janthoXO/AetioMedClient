@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -77,6 +77,13 @@ const defaultTab = (status: RunRecord["status"]) =>
       : status === "done"
         ? "case"
         : "labels";
+
+const FINISHED_TOAST = {
+  done: { message: "Case generated", action: "Show case" },
+  planned: { message: "Plan ready for review", action: "Show plan" },
+  failed: { message: "Generation failed", action: "Show labels" },
+  cancelled: { message: "Generation cancelled", action: "Show labels" },
+} as const;
 
 function EmptyNote({
   title,
@@ -287,6 +294,23 @@ function RunDetail({ run }: { run: RunRecord }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const active = run.status === "queued" || run.status === "running";
+
+  // Tell the viewer once the run they are watching finishes; the tab stays put.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active) {
+      const { message, action } =
+        FINISHED_TOAST[run.status as keyof typeof FINISHED_TOAST];
+      (run.status === "failed" ? toast.error : toast.success)(message, {
+        duration: 10_000,
+        action: {
+          label: action,
+          onClick: () => setTab(defaultTab(run.status)),
+        },
+      });
+    }
+    wasActive.current = active;
+  }, [active, run.status]);
 
   async function cancel() {
     if (!(await cancelRun(run.jobId)))
