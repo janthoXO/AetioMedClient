@@ -1,4 +1,8 @@
+import { useMemo } from "react";
+import { ExternalLink } from "lucide-react";
+import { PdfPreview } from "@/components/PdfPreview";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
@@ -14,6 +18,44 @@ const RELEVANCE = {
   contraindicated: "destructive",
 } as const;
 
+const decodeBase64 = (b64: string) =>
+  Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+/** Image or PDF in place, plus a link that opens it in a new tab. */
+function MediaPart({ part }: { part: ContentPart }) {
+  const bytes = useMemo(() => decodeBase64(part.value), [part.value]);
+  const open = () =>
+    // Chrome blocks opening data: URLs as a tab, so go through a blob URL.
+    // ponytail: never revoked (the tab may reload it); freed on page unload.
+    window.open(
+      URL.createObjectURL(new Blob([bytes], { type: part.type })),
+      "_blank",
+      "noopener"
+    );
+  return (
+    <figure className="flex flex-col items-start gap-1">
+      {part.type === "application/pdf" ? (
+        <PdfPreview bytes={bytes} />
+      ) : (
+        <img
+          src={`data:${part.type};base64,${part.value}`}
+          alt={part.alt}
+          className="max-w-full rounded-md border"
+        />
+      )}
+      <Button
+        variant="link"
+        size="sm"
+        className="px-0 text-muted-foreground"
+        onClick={open}
+      >
+        <ExternalLink data-icon="inline-start" />
+        Open in new tab
+      </Button>
+    </figure>
+  );
+}
+
 export function Parts({ parts }: { parts: ContentPart[] }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -24,20 +66,12 @@ export function Parts({ parts }: { parts: ContentPart[] }) {
               {part.value}
             </p>
           );
-        const src = `data:${part.type};base64,${part.value}`;
-        if (part.type.startsWith("image/"))
-          return (
-            <img
-              key={i}
-              src={src}
-              alt={part.alt}
-              className="max-w-full rounded-md border"
-            />
-          );
+        if (part.type.startsWith("image/") || part.type === "application/pdf")
+          return <MediaPart key={i} part={part} />;
         return (
           <a
             key={i}
-            href={src}
+            href={`data:${part.type};base64,${part.value}`}
             download={part.alt || part.type}
             className="text-sm underline underline-offset-4"
           >
